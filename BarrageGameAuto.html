@@ -1,0 +1,1007 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<meta charset="UTF-8" />
+	<meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+	<title>BarrageGame</title>
+	<style type="text/css">
+		canvas{
+			background-color: #000;
+			cursor: none;
+		}
+	</style>
+	<script type="text/javascript">
+		var canvas,context;
+		var [width,height] = [500,600];
+		var cfr;
+		var scores,graze;
+		var stars = new Array();
+		var [points,shots] = [new Array(),new Array()];
+		var px,py,time = 0;
+		var startTime,prevTime,elapsedTime;
+		var status = "ready";
+		var circleDisplay = false;
+		var canvasFR = true;
+		var popSpead = 1000;	//攻撃速度[1000]
+		var playerDetect = 10;	//当たり判定[10]
+		var grazeDetect = 10;	//かすり判定[10]
+		var popSpOld = popSpead;
+		var AI = true;
+
+		class Shot {
+			constructor(type,fcolors=new rgb(255,254,224),x=0,y=0,angle,delay=0,speeds=2,bomb=-1,shotBKey="",fall=-1,plHoming=0){
+				this.type = type;
+				this.fcolors = fcolors;
+				this.lcolors = fcolors.divide(2,1,4);
+				this.x = ((Math.random()*(width-50))|0) + 25;
+				this.y = ((Math.random()*(height-50))|0) + 25;
+				this.r = 200 / 2;
+				if(type == "shot")
+					[this.x,this.y,this.r] = [x,y,10];
+				this.angle = angle;
+				this.delay = delay;
+				this.speeds = speeds;
+				this.bomb = bomb % 10000;
+				this.reBomb = bomb>10000?bomb-10000:-1;
+				this.sbk = shotBKey;
+				this.fall = fall;
+				this.fallSec = 1;
+				this.plh = plHoming;
+			}
+			update(){
+				if(this.type == "point"){	
+					if(circleDisplay){
+						this.r = 0;
+					}
+					else{
+						this.r -= this.r / 20;
+						drawCircle(this.x,this.y,this.r,null,"cyan");
+					}
+				}
+				else if(this.type == "shot"){
+					this.delay--;
+					if(this.delay < 0){
+						this.x += Math.cos(this.angle) * this.speeds;
+						this.y += Math.sin(this.angle) * this.speeds;
+						this.x += Math.cos(Math.atan2(py-this.y,px-this.x)) * this.plh;
+						this.y += Math.sin(Math.atan2(py-this.y,px-this.x)) * this.plh;
+						if(this.fall != -1){
+							if(this.fall < 1){
+								this.y += Math.sin(90) * this.fallSec;
+								this.fallSec += 0.05;
+							}
+							else{
+								this.fall--;
+							}
+						}
+						if(this.bomb != -1){
+							this.bomb--;
+							if(this.bomb < 0){
+								shotType[this.sbk](this.x,this.y);
+								if(this.reBomb != -1){
+									this.bomb = this.reBomb;
+								}
+							}
+						}
+						drawCircle(this.x,this.y,this.r,
+							`rgb(${this.fcolors.r},${this.fcolors.g},${this.fcolors.b})`,
+							`rgb(${this.lcolors.r},${this.lcolors.g},${this.lcolors.b})`);
+					}
+				}
+			}
+		}
+
+//###########################################Shotのパターン###########################################
+		var shotType = {
+		//ランダムな方向に5発
+			r1r: -1,
+			r1: function(x,y,angle=0,speeds=2,bomb=-1,sbk="",fall=-1,plh=0){
+				for(let j=0;j<5;j++){
+					angle += Math.PI * 2 * Math.random();
+					shots.push(new Shot("shot",undefined,x,y,angle,0,speeds,bomb,sbk,fall,plh));
+				}
+			},
+		//ランダムな方向に1発
+			r2r: -1,
+			r2: function(x,y,angle=Math.PI * 2 * Math.random(),speeds=2,bomb=-1,sbk="",fall=-1,plh=0){
+				shots.push(new Shot("shot",undefined,x,y,angle,0,speeds,bomb,sbk,fall,plh));
+			},
+		//ランダムな方向に5発[ステルスっぽい色]
+			r3r: -1,
+			r3: function(x,y,angle=0,speeds=2,bomb=-1,sbk="",fall=-1,plh=0){
+				for(let j=0;j<5;j++){
+					angle += Math.PI * 2 * Math.random();
+					shots.push(new Shot("shot",new rgb(25,25,25),x,y,angle,0,speeds,bomb,sbk,fall,plh));
+				}
+			},
+		//ランダムな方向に半円(8発)
+			h1r: -1,
+			h1: function(x,y,angle=Math.PI * 2 * Math.random(),speeds=2,bomb=-1,sbk="",fall=-1,plh=0){
+				for(let j=0;j<8;j++){
+					angle += Math.PI * 2 / 16;
+					shots.push(new Shot("shot",new rgb(100,255,180),x,y,angle,0,speeds,bomb,sbk,fall,plh));
+				}
+			},
+		//円(16発)
+			c1r: -1,
+			c1: function(x,y,angle=0,speeds=2,bomb=-1,sbk="",fall=-1,plh=0){
+				for(let j=0;j<16;j++){
+					angle += Math.PI * 2 / 16;
+					shots.push(new Shot("shot",new rgb(100,255,255),x,y,angle,0,speeds,bomb,sbk,fall,plh));
+				}
+			},
+		//円[渦巻き](64発)
+			c2r: -1,
+			c2: function(x,y,angle=0,speeds=2,bomb=-1,sbk="",fall=-1,plh=0){
+				for(let j=0;j<64;j++){
+					angle += Math.PI * 2 / 18;
+					shots.push(new Shot("shot",new rgb(150,200,200),x,y,angle,63-j,speeds,bomb,sbk,fall,plh));
+				}
+			},
+		//ランダムな方向にsin波(8発)
+			s1r: -1,
+			s1: function(x,y,angle=Math.PI * 2 * Math.random(),speeds=2,bomb=-1,sbk="",fall=-1,plh=0){
+				for(let j=0;j<8;j++){
+					angle += Math.sin(j);
+					shots.push(new Shot("shot",new rgb(100,255,100),x,y,angle,70-j*10,speeds,bomb,sbk,fall,plh));
+				}
+			},
+		//自機狙い[発射時から向き固定](1発)
+			z1r: -1,
+			z1: function(x,y,angle=Math.atan2(py-y,px-x),speeds=2,bomb=-1,sbk="",fall=-1,plh=0){
+				shots.push(new Shot("shot",new rgb(255,225,255),x,y,angle,0,speeds,bomb,sbk,fall,plh));
+			},
+		//自機狙い[追尾,100ごとにr1](1発)
+			z2r: -1,
+			z2: function(x,y,angle=Math.atan2(py-y,px-x),speeds=2,bomb=10100,sbk="r1",fall=-1,plh=1){
+				shots.push(new Shot("shot",new rgb(255,225,255),x,y,angle,0,speeds,bomb,sbk,fall,plh));
+			},
+		//自機狙い[ステルスっぽい色](1発)
+			z3r: -1,
+			z3: function(x,y,angle=Math.atan2(py-y,px-x),speeds=2,bomb=-1,sbk="",fall=-1,plh=0){
+				shots.push(new Shot("shot",new rgb(25,25,25),x,y,angle,0,speeds,bomb,sbk,fall,plh));
+			},
+		//爆発[0~180後にfc1,徐々に落下](1発-6発)
+			b1r: -1,
+			b1: function(x,y,angle=Math.PI /2,speeds=2,bomb=(Math.random()*180)|0,sbk="fc1",fall=1,plh=0){
+				shots.push(new Shot("shot",new rgb(225,175,175),x,y,angle,0,speeds,bomb,sbk,fall,plh));
+			},
+		//爆発[0~180後にfc1,徐々に落下(自機に微接近)](1発-6発)
+			b2r: -1,
+			b2: function(x,y,angle=Math.PI /2,speeds=2,bomb=(Math.random()*180)|0,sbk="fc1",fall=1,plh=2){
+				shots.push(new Shot("shot",new rgb(225,175,175),x,y,angle,0,speeds,bomb,sbk,fall,plh));
+			},
+		//爆発 円[130後にc1](6発-etc.)
+			b3r: -1,
+			b3: function(x,y,angle=0,speeds=2,bomb=130,sbk="c1",fall=-1,plh=0){
+				for(let j=0;j<6;j++){
+					angle += Math.PI * 2 / 6;
+					shots.push(new Shot("shot",new rgb(225,175,175),x,y,angle,0,speeds,bomb,sbk,fall,plh));
+				}
+			},
+		//落下[1~31後に徐々に落下](5発)
+			fc1r: -1,
+			fc1: function(x,y,angle=Math.PI * 2 * Math.random(),speeds=2,bomb=-1,sbk="",fall=((Math.random()*30)|0)+1,plh=0){
+				for(let j=0;j<5;j++){
+					angle += Math.PI * 2 / 5;
+					shots.push(new Shot("shot",new rgb(255,225,225),x,y,angle,0,speeds,bomb,sbk,fall,plh));
+				}
+			}
+		}
+//###########################################Shotのシナリオ###########################################
+		const shotScenario = (x,y) => {
+			let sTime = time/1000;
+			if(sTime < 15){
+				shotType.r1r = 0;	//基本
+				popSpead = popSpOld;	//等速
+			}
+			else if(sTime < 30){
+				shotType.h1r = 0.5;	//サブ
+				shotType.c1r = 0.8;
+			}
+			else if(sTime < 60){
+				shotType.c1r = 0;	//基本
+				shotType.h1r = 0.7;	//サブ
+				shotType.c2r = 0.5;
+				shotType.r1r = -1;	//廃止
+			}
+			else if(sTime < 90){
+				shotType.z1r = 0;	//基本
+				shotType.s1r = 0.5;	//サブ
+				shotType.h1r = -1;	//廃止
+				shotType.c1r = -1;
+				shotType.c2r = -1;
+				popSpead = popSpOld / 2;//2倍速
+			}
+			else if(sTime < 100){
+				shotType.s1r = -1;	//廃止
+				shotType.z1r = -1;
+				popSpead = popSpOld / 32;//32倍速
+				circleDisplay = true;
+				if(width < 898)
+					canvasReSize(width+2,height,0);
+			}
+			else if(sTime < 110){
+				shotType.c1(width/2,height/2,sTime);
+				popSpead = popSpOld / 3;//3倍速
+				if(width != 900)
+					canvasReSize(900);
+			}
+			else if(sTime < 130){
+				shotType.z1r = 0;	//基本
+				shotType.c1(width/2,height/2,sTime);
+				circleDisplay = false;
+			}
+			else if(sTime < 160){
+				shotType.z1r = -1;	//廃止
+				shotType.b1(maps(Math.random(),0,1,0,width),0);
+				popSpead = popSpOld / 2;//2倍速
+				circleDisplay = true;
+			}
+			else if(sTime < 190){
+				shotType.b2(maps(Math.random(),0,1,0,width),0);
+				popSpead = popSpOld / 2;//2倍速
+			}
+			else if(sTime < 200){
+				popSpead = popSpOld / 32;//32倍速
+				if(width > 502)
+					canvasReSize(width-2,height,0);
+			}
+			else if(sTime < 205){
+				popSpead = popSpOld / 4;//4倍速
+				if(width != 500)
+					canvasReSize(500);
+			}
+			else if(sTime < 240){
+				shotType.c1(0,0,sTime*2);
+				shotType.c1(width,height,sTime*2);
+			}
+			else if(sTime < 245){
+				popSpead = popSpOld / 2 * 3;//2/3倍速
+			}
+			else if(sTime < 280){
+				shotType.z2r = 0;	//基本
+				shotType.h1r = 0.9;	//サブ
+				shotType.c2r = 0.7;
+				circleDisplay = false;
+			}
+			else if(sTime < 285){
+				popSpead = popSpOld * 2;//1/2倍速
+			}
+			else if(sTime < 325){
+				shotType.h1r = -1;	//廃止
+				shotType.c2r = -1;
+				shotType.z2r = -1;
+				shotType.b3(width/2,height/2,sTime*2);
+				circleDisplay = true;
+			}
+			else if(sTime < 330){
+				popSpead = popSpOld / 32;//32倍速
+				if(width < 599)
+					canvasReSize(width+1,height,0);
+			}
+			else if(sTime < 333){
+				popSpead = popSpOld;//等速
+				if(width != 600)
+					canvasReSize(600);
+			}
+			else if(sTime < 360){
+				shotType.c1(width/2,height/2,sTime+5,1);
+				shotType.c1(width/2,height/2,sTime,1);
+				shotType.b1(maps(Math.random(),0,1,0,width),0);
+			}
+			else if(sTime < 370){
+				popSpead = popSpOld / 32;//32倍速
+				if(width > 298)
+					canvasReSize(width-2,height-2,0);
+			}
+			else if(sTime < 372){
+				popSpead = popSpOld;//等速
+				if(width != 300 || height != 300)
+					canvasReSize(300,300);
+			}
+			else if(sTime < 400){
+				shotType.fc1r = 0;	//基本
+				shotType.r2(maps(Math.random(),0,1,0,width),0,Math.PI / 2,0.5);
+				shotType.r2(0,maps(Math.random(),0,1,0,height),0,0.5);
+				shotType.r2(maps(Math.random(),0,1,0,width),height,Math.PI / 2 * 3,0.5);
+				shotType.r2(width,maps(Math.random(),0,1,0,height),Math.PI,0.5);
+				circleDisplay = false;
+			}
+			else if(sTime < 405){
+				shotType.fc1r = -1;	//廃止
+				circleDisplay = true;
+				canvasReSize(width,height,2000);
+			}
+			else if(sTime < 430){
+				shotType.r3r = 0;	//基本
+				shotType.z3r = 0.5;	//サブ
+				circleDisplay = false;
+			}
+			else if(sTime < 455){
+				shotType.z2r = 0;	//基本
+				shotType.r3r = -1;	//廃止
+				shotType.z3r = -1;
+				canvasFR = false;
+			}
+			else if(sTime < 460){
+				shotType.z2r = -1;	//廃止
+				popSpead = popSpOld / 32;//32倍速
+				circleDisplay = true;
+				if(width < 500)
+					canvasReSize(width+2,height,0);
+				if(height < 600)
+					canvasReSize(width,height+3,0);
+				canvasFR = true;
+			}
+			else{
+				popSpead = popSpOld;	//等速
+				canvasReSize(500,600);
+				status = "clear";
+			}
+			
+
+			let [indexs,keys] = [new Array(),new Array()];
+			let i = 0; 
+			for(let key in shotType){
+				indexs[i] = i;
+				keys[i] = key;
+				i++;
+			}
+			indexs.sort(function(a,b){
+				if(typeof(shotType[keys[a]])=="function" &&
+					typeof(shotType[keys[b]])=="function"){
+					return 0;
+				}
+				else if(typeof(shotType[keys[a]])=="function"){
+					return 1;
+				}
+				else if(typeof(shotType[keys[b]])=="function"){
+					return -1;
+				}
+				else{
+					return shotType[keys[b]] - shotType[keys[a]];
+				}
+			});
+			for(i=0;i<indexs.length;i++){
+				if(indexs[i] == 1 ||
+					shotType[keys[indexs[i]]] == -1){
+					break;
+				}
+				if(Math.random() >= shotType[keys[indexs[i]]]){
+					shotType[keys[indexs[i]+1]](x,y);
+					break;
+				}
+			}
+		}
+//####################################################################################################
+
+		rgb = function(r=0,g=0,b=0){
+			this.r = r;
+			this.g = g;
+			this.b = b;
+			this.divide = function(r1,g1,b1){
+				var ret = new rgb(this.r,this.g,this.b);
+				ret.r /= r1;
+				ret.g /= g1;
+				ret.b /= b1;
+				return ret;
+			};
+		};
+		function maps(x,in_min,in_max,out_min,out_max){
+			return (x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min;
+		}
+
+		const init = () => {
+			cfr = document.getElementById("CFR");
+			cfr.style.display = "none";
+			canvas = document.getElementById("space");
+			context = canvas.getContext("2d");
+			canvasReSize(width,height);
+			context.lineWidht = 4;
+
+			canvas.addEventListener("click",startGame);
+			if(!AI){
+				canvas.addEventListener("mousemove",movePlayer);
+			}
+
+			update();
+		}
+		const resets = () => {
+			canvasReSize(500,600);
+			let i = 0; 
+			for(let key in shotType){
+				if(typeof(shotType[key])!="function"){
+					shotType[key] = -1;
+				}
+				i++;
+			}
+			[scores,graze] = [0,0];
+			circleDisplay = false;
+			canvasFR = true;
+			if(AI){
+				px = width/2-80;
+				py = height/2;
+			}
+		}
+		const canvasReSize = (w=width,h=height,starsCou=100) => {
+			[canvas.width,canvas.height] = [width,height] = [w,h];
+			stars = new Array();
+			for(let i=0;i<starsCou;i++){
+				const x = Math.random() * width;
+				const y = Math.random() * height;
+				const r = Math.random() * 1.5;
+				stars.push({x:x,y:y,r:r});
+			}
+		}
+		const startGame = event => {
+			if(status != "play"){
+				[points,shots] = [[],[]];
+				[startTime,prevTime,elapsedTime] = [Date.now(),Date.now(),0];
+				movePlayer(event);
+				status = "play";
+				resets();
+			}
+		}
+		const movePlayer = event => {
+			let movefl;
+			if(AI){
+				movefl = 0
+				if(status == "play"){
+					for(let i=points.length-1;i>=0;i--){
+						movefl = moveAI(points[i].x,points[i].y,movefl);
+					}
+					for(let i=shots.length-1;i>=0;i--){
+						movefl = moveAI(shots[i].x,shots[i].y,movefl);
+					}
+					if(!movefl){
+						if(px > width/2-80){
+							px--;
+						}
+						else{
+							px++;
+						}
+						if(py > height/2){
+							py--;
+						}
+						else{
+							py++;
+						}
+					}
+				}
+			}
+			else{
+				const canvasRect = canvas.getBoundingClientRect();
+				px = event.clientX - canvasRect.left;
+				py = event.clientY - canvasRect.top;
+			}
+		}
+		const moveAI = (x,y,movefl=0) => {
+			let drawfl;
+			if(Math.hypot(px-x,py-y) < playerDetect+80){
+				if(!(px-15 < 0 || px-15 > width || py < 0 || py > height)){
+					drawfl = 0;
+					if(py > height/2){
+						if(((px-x)**2)+((py-y+15)**2) <= (playerDetect+10)**2-10){
+							py--;
+							drawfl = 1;
+						}
+						else if(((px-x)**2)+((py-y-15)**2) <= (playerDetect+10)**2-10){
+							py++;
+							drawfl = 1;
+						}
+						else if(((px-x+15)**2)+((py-y)**2) <= (playerDetect+10)**2-10){
+							px--;
+							drawfl = 1;
+						}
+					}
+					else{
+						if(((px-x)**2)+((py-y-15)**2) <= (playerDetect+10)**2-10){
+							py++;
+							drawfl = 1;
+						}
+						else if(((px-x)**2)+((py-y+15)**2) <= (playerDetect+10)**2-10){
+							py--;
+							drawfl = 1;
+						}
+						else if(((px-x+15)**2)+((py-y)**2) <= (playerDetect+10)**2-10){
+							px--;
+							drawfl = 1;
+						}
+					}
+					if(drawfl){
+						movefl = 1;
+						drawCircle(px+15,py,playerDetect,null,"#F55");
+					}
+					else{
+						drawCircle(px+15,py,playerDetect,null,"#855");
+					}
+				}
+				else{
+					if(!(py < 0 || py > height)){
+						if(((px-x+15)**2)+((py-y)**2) <= (playerDetect+10)**2-10){
+							movefl = 1;
+							drawCircle(px+15,py,playerDetect,null,"#5F5");
+							if(py > height/2){
+								if(((px-x)**2)+((py-y+15)**2) <= (playerDetect+10)**2-10){
+									py--;
+								}
+								else if(((px-x)**2)+((py-y-15)**2) <= (playerDetect+10)**2-10){
+									py++;
+								}
+							}
+							else{
+								if(((px-x)**2)+((py-y-15)**2) <= (playerDetect+10)**2-10){
+									py++;
+								}
+								else if(((px-x)**2)+((py-y+15)**2) <= (playerDetect+10)**2-10){
+									py--;
+								}
+							}
+						}
+						else{
+							drawCircle(px+15,py,playerDetect,null,"#585");
+						}
+					}
+				}
+				if(!(px+15 < 0 || px+15 > width || py < 0 || py > height)){
+					drawfl = 0;
+					if(py > height/2){
+						if(((px-x)**2)+((py-y+15)**2) <= (playerDetect+10)**2-10){
+							py--;
+							drawfl = 1;
+						}
+						else if(((px-x)**2)+((py-y-15)**2) <= (playerDetect+10)**2-10){
+							py++;
+							drawfl = 1;
+						}
+						else if(((px-x-15)**2)+((py-y)**2) <= (playerDetect+10)**2-10){
+							px++;
+							drawfl = 1;
+						}
+					}
+					else{
+						if(((px-x)**2)+((py-y-15)**2) <= (playerDetect+10)**2-10){
+							py++;
+							drawfl = 1;
+						}
+						else if(((px-x)**2)+((py-y+15)**2) <= (playerDetect+10)**2-10){
+							py--;
+							drawfl = 1;
+						}
+						else if(((px-x-15)**2)+((py-y)**2) <= (playerDetect+10)**2-10){
+							px++;
+							drawfl = 1;
+						}
+					}
+					if(drawfl){
+						movefl = 1;
+						drawCircle(px-15,py,playerDetect,null,"#F55");
+					}
+					else{
+						drawCircle(px-15,py,playerDetect,null,"#855");
+					}
+				}
+				else{
+					if(!(py < 0 || py > height)){
+						if(((px-x-15)**2)+((py-y)**2) <= (playerDetect+10)**2-10){
+							movefl = 1;
+							drawCircle(px-15,py,playerDetect,null,"#5F5");
+							if(py > height/2){
+								if(((px-x)**2)+((py-y+15)**2) <= (playerDetect+10)**2-10){
+									py--;
+								}
+								else if(((px-x)**2)+((py-y-15)**2) <= (playerDetect+10)**2-10){
+									py++;
+								}
+							}
+							else{
+								if(((px-x)**2)+((py-y-15)**2) <= (playerDetect+10)**2-10){
+									py++;
+								}
+								else if(((px-x)**2)+((py-y+15)**2) <= (playerDetect+10)**2-10){
+									py--;
+								}
+							}
+						}
+						else{
+							drawCircle(px-15,py,playerDetect,null,"#585");
+						}
+					}
+				}
+				if(!(px < 0 || px > width || py-15 < 0 || py-15 > height)){
+					drawfl = 0;
+					if(px > width/2){
+						if(((px-x+15)**2)+((py-y)**2) <= (playerDetect+10)**2-10){
+							px--;
+							drawfl = 1;
+						}
+						else if(((px-x-15)**2)+((py-y)**2) <= (playerDetect+10)**2-10){
+							px++;
+							drawfl = 1;
+						}
+						else if(((px-x)**2)+((py-y+15)**2) <= (playerDetect+10)**2-10){
+							py--;
+							drawfl = 1;
+						}
+					}
+					else{
+						if(((px-x-15)**2)+((py-y)**2) <= (playerDetect+10)**2-10){
+							px++;
+							drawfl = 1;
+						}
+						else if(((px-x+15)**2)+((py-y)**2) <= (playerDetect+10)**2-10){
+							px--;
+							drawfl = 1;
+						}
+						else if(((px-x)**2)+((py-y+15)**2) <= (playerDetect+10)**2-10){
+							py--;
+							drawfl = 1;
+						}
+					}
+					if(drawfl){
+						movefl = 1;
+						drawCircle(px,py+15,playerDetect,null,"#F55");
+					}
+					else{
+						drawCircle(px,py+15,playerDetect,null,"#855");
+					}
+				}
+				else{
+					if(!(px < 0 || px > width)){
+						if(((px-x)**2)+((py-y+15)**2) <= (playerDetect+10)**2-10){
+							movefl = 1;
+							drawCircle(px,py+15,playerDetect,null,"#5F5");
+							if(px > width/2){
+								if(((px-x+15)**2)+((py-y)**2) <= (playerDetect+10)**2-10){
+									px--;
+								}
+								else if(((px-x-15)**2)+((py-y)**2) <= (playerDetect+10)**2-10){
+									px++;
+								}
+							}
+							else{
+								if(((px-x-15)**2)+((py-y)**2) <= (playerDetect+10)**2-10){
+									px++;
+								}
+								else if(((px-x+15)**2)+((py-y)**2) <= (playerDetect+10)**2-10){
+									px--;
+								}
+							}
+						}
+						else{
+							drawCircle(px,py+15,playerDetect,null,"#585");
+						}
+					}
+				}
+				if(!(px < 0 || px > width || py+15 < 0 || py+15 > height)){
+					drawfl = 0;
+					if(px > width/2){
+						if(((px-x+15)**2)+((py-y)**2) <= (playerDetect+10)**2-10){
+							px--;
+							drawfl = 1;
+						}
+						else if(((px-x-15)**2)+((py-y)**2) <= (playerDetect+10)**2-10){
+							px++;
+							drawfl = 1;
+						}
+						else if(((px-x)**2)+((py-y-15)**2) <= (playerDetect+10)**2-10){
+							py++;
+							drawfl = 1;
+						}
+					}
+					else{
+						if(((px-x-15)**2)+((py-y)**2) <= (playerDetect+10)**2-10){
+							px++;
+							drawfl = 1;
+						}
+						else if(((px-x+15)**2)+((py-y)**2) <= (playerDetect+10)**2-10){
+							px--;
+							drawfl = 1;
+						}
+						else if(((px-x)**2)+((py-y-15)**2) <= (playerDetect+10)**2-10){
+							py++;
+							drawfl = 1;
+						}
+					}
+					if(drawfl){
+						movefl = 1;
+						drawCircle(px,py-15,playerDetect,null,"#F55");
+					}
+					else{
+						drawCircle(px,py-15,playerDetect,null,"#855");
+					}
+				}
+				else{
+					if(!(px < 0 || px > width)){
+						if(((px-x)**2)+((py-y-15)**2) <= (playerDetect+10)**2-10){
+							movefl = 1;
+							drawCircle(px,py-15,playerDetect,null,"#5F5");
+							if(px > width/2){
+								if(((px-x+15)**2)+((py-y)**2) <= (playerDetect+10)**2-10){
+									px--;
+								}
+								else if(((px-x-15)**2)+((py-y)**2) <= (playerDetect+10)**2-10){
+									px++;
+								}
+							}
+							else{
+								if(((px-x-15)**2)+((py-y)**2) <= (playerDetect+10)**2-10){
+									px++;
+								}
+								else if(((px-x+15)**2)+((py-y)**2) <= (playerDetect+10)**2-10){
+									px--;
+								}
+							}
+						}
+						else{
+							drawCircle(px,py-15,playerDetect,null,"#585");
+						}
+					}
+				}
+				if(!(px-15 < 0 || px-15 > width || py-15 < 0 || py-15 > height)){
+					if(((px-x+15)**2)+((py-y+15)**2) <= (playerDetect+10)**2-10){
+						movefl = 1;
+						drawCircle(px+15,py+15,playerDetect,null,"#F55");
+						px--;
+						py--;
+					}
+					else{
+						drawCircle(px+15,py+15,playerDetect,null,"#855");
+					}
+				}
+				else{
+					if(!(px-15 < 0 || px-15 > width)){
+						if(((px-x+15)**2)+((py-y+15)**2) <= (playerDetect+10)**2-10){
+							movefl = 1;
+							drawCircle(px+15,py+15,playerDetect,null,"#5F5");
+							px--;
+						}
+						else{
+							drawCircle(px+15,py+15,playerDetect,null,"#585");
+						}
+					}
+					if(!(py-15 < 0 || py-15 > height)){
+						if(((px-x+15)**2)+((py-y+15)**2) <= (playerDetect+10)**2-10){
+							movefl = 1;
+							drawCircle(px+15,py+15,playerDetect,null,"#5F5");
+							py--;
+						}
+						else{
+							drawCircle(px+15,py+15,playerDetect,null,"#585");
+						}
+					}
+				}
+				if(!(px+15 < 0 || px+15 > width || py-15 < 0 || py-15 > height)){
+					if(((px-x-15)**2)+((py-y+15)**2) <= (playerDetect+10)**2-10){
+						movefl = 1;
+						drawCircle(px-15,py+15,playerDetect,null,"#F55");
+						px++;
+						py--;
+					}
+					else{
+						drawCircle(px-15,py+15,playerDetect,null,"#855");
+					}
+				}
+				else{
+					if(!(px+15 < 0 || px+15 > width)){
+						if(((px-x-15)**2)+((py-y+15)**2) <= (playerDetect+10)**2-10){
+							movefl = 1;
+							drawCircle(px-15,py+15,playerDetect,null,"#5F5");
+							px++;
+						}
+						else{
+							drawCircle(px-15,py+15,playerDetect,null,"#585");
+						}
+					}
+					if(!(py-15 < 0 || py-15 > height)){
+						if(((px-x-15)**2)+((py-y+15)**2) <= (playerDetect+10)**2-10){
+							movefl = 1;
+							drawCircle(px-15,py+15,playerDetect,null,"#5F5");
+							py--;
+						}
+						else{
+							drawCircle(px-15,py+15,playerDetect,null,"#585");
+						}
+					}
+				}
+				if(!(px-15 < 0 || px-15 > width || py+15 < 0 || py+15 > height)){
+					if(((px-x+15)**2)+((py-y-15)**2) <= (playerDetect+10)**2-10){
+						movefl = 1;
+						drawCircle(px+15,py-15,playerDetect,null,"#F55");
+						px--;
+						py++;
+					}
+					else{
+						drawCircle(px+15,py-15,playerDetect,null,"#855");
+					}
+				}
+				else{
+					if(!(px-15 < 0 || px-15 > width)){
+						if(((px-x+15)**2)+((py-y-15)**2) <= (playerDetect+10)**2-10){
+							movefl = 1;
+							drawCircle(px+15,py-15,playerDetect,null,"#5F5");
+							px--;
+						}
+						else{
+							drawCircle(px+15,py-15,playerDetect,null,"#585");
+						}
+					}
+					if(!(py+15 < 0 || py+15 > height)){
+						if(((px-x+15)**2)+((py-y-15)**2) <= (playerDetect+10)**2-10){
+							movefl = 1;
+							drawCircle(px+15,py-15,playerDetect,null,"#5F5");
+							py++;
+						}
+						else{
+							drawCircle(px+15,py-15,playerDetect,null,"#585");
+						}
+					}
+				}
+				if(!(px+15 < 0 || px+15 > width || py+15 < 0 || py+15 > height)){
+					if(((px-x-15)**2)+((py-y-15)**2) <= (playerDetect+10)**2-10){
+						movefl = 1;
+						drawCircle(px-15,py-15,playerDetect,null,"#F55");
+						px++;
+						py++;
+					}
+					else{
+						drawCircle(px-15,py-15,playerDetect,null,"#855");
+					}
+				}
+				else{
+					if(!(px+15 < 0 || px+15 > width)){
+						if(((px-x-15)**2)+((py-y-15)**2) <= (playerDetect+10)**2-10){
+							movefl = 1;
+							drawCircle(px-15,py-15,playerDetect,null,"#5F5");
+							px--;
+						}
+						else{
+							drawCircle(px-15,py-15,playerDetect,null,"#585");
+						}
+					}
+					if(!(py+15 < 0 || py+15 > height)){
+						if(((px-x-15)**2)+((py-y-15)**2) <= (playerDetect+10)**2-10){
+							movefl = 1;
+							drawCircle(px-15,py-15,playerDetect,null,"#5F5");
+							py--;
+						}
+						else{
+							drawCircle(px-15,py-15,playerDetect,null,"#585");
+						}
+					}
+				}
+			}
+			return movefl;
+		}
+		const update = () => {
+			context.fillStyle = "rgba(0,0,0,0.5)";
+			if(canvasFR){
+				context.fillRect(0,0,canvas.width,canvas.height);
+				if(cfr.style.display == "block"){
+					cfr.style.display = "none";
+				}
+			}
+			else{
+				if(cfr.style.display == "none"){
+					cfr.style.display = "block";
+				}
+			}
+			if(AI){
+				movePlayer();
+			}
+			if(px < 0){
+				px = 0;
+			}
+			if(px > width){
+				px = width;
+			}
+			if(py < 0){
+				py = 0;
+			}
+			if(py > height){
+				py = height;
+			}
+			for(const star of stars){
+				if(Math.random() > 0.1)
+					drawCircle(star.x,star.y,star.r,"white");
+			}
+			if(status == "play"){
+				elapsedTime += Date.now() - prevTime;
+				[prevTime,time] = [Date.now(),Date.now() - startTime];
+				if(elapsedTime > popSpead){
+					elapsedTime = 0;
+					points.push(new Shot("point"));
+				}
+				// プレイヤー描画
+				context.fillStyle = null;
+				context.strokeStyle = "#D66";
+				context.beginPath();
+				context.arc(px,py,grazeDetect,0,Math.PI*2);
+				context.stroke();
+				context.fillStyle = "tomato";
+				context.beginPath();
+				context.arc(px,py,playerDetect/4,0,Math.PI*2);
+				context.fill();
+			}
+			else{
+				context.fillStyle = "#FFF";
+				context.beginPath();
+				context.arc(px,py,5,0,Math.PI*2);
+				context.fill();
+				canvasFR = true;
+			}
+			for(let i=points.length-1;i>=0;i--){
+				if(points[i].r <= 1){
+					shotScenario(points[i].x,points[i].y);
+					points.splice(i,1);
+				}
+				else{
+					points[i].update();
+				}
+			}
+			for(let i=shots.length-1;i>=0;i--){
+				shots[i].update();
+				let [x,y,r] = [shots[i].x,shots[i].y,shots[i].r];
+				if(status == "play"){
+					if(Math.hypot(px-x,py-y) < playerDetect){
+						canvasReSize(500,600);
+						status = "end";
+					}
+					if(Math.hypot(px-x,py-y) < playerDetect+grazeDetect)
+						graze++;
+				}
+				if(x < -r || x > width + r || y < -r || y > height + r){
+					shots.splice(i,1);
+				}
+			}
+			drawText("TIME : "+ (time/1000).toFixed(1),5,5,20,"white","left","top");
+			drawText("GRAZE : "+ (graze|0),width-155,5,20,"white","left","top");
+			scores = (time/10 + graze + 0.5)|0;
+			if(status == "end"){
+				drawText("GAMEOVER",width/2,height/2-30,50,"red");
+				drawText("Click here to retry",width/2,height/2+20,30,"red");
+				drawText("Score : "+ scores,width/2,height/2+60,30,"red");
+			}
+			else if(status == "clear"){
+				drawText("GAMECLEAR",width/2,height/2-55,50,"red");
+				drawText("プレイしてくれてありがとう！",width/2,height/2-10,30,"red");
+				drawText("Click here to retry",width/2,height/2+25,30,"red");
+				drawText("Score : "+ scores,width/2,height/2+65,30,"red");
+			}
+			else if(status == "ready"){
+				drawText("Click here to start",width/2,height/2+20,30,"red");
+			}
+			window.requestAnimationFrame(update);
+		}
+		const drawCircle = (x,y,r,color1,color2 = null) => {
+			context.fillStyle = color1;
+			context.strokeStyle = color2;
+			context.beginPath();
+			context.arc(x,y,r,0,Math.PI*2);
+			if(color2 != null)
+				context.stroke();
+			if(color1 != null)
+				context.fill();
+		}
+		const drawText = (text,x,y,size,color,align = "center",base = "middle") => {
+			context.font = 'bold '+ size +'px "太ゴシック","Arial Black"';
+			context.textAlign = align;
+			context.textBaseline = base;
+			context.fillStyle = color;
+			context.fillText(text,x,y);
+		}
+	</script>
+</head>
+<body onload="init();">
+	<p><b>弾幕ゲー(避け専)</b>[全460秒]</p>
+<!--	参考
+仕様上の最高値	1780000
+製作者	48773
+-->
+	<canvas id="space"></canvas>
+	<p id="CFR">※ご利用の端末は多分正常です</p>
+	
+</body>
+
+</html>
